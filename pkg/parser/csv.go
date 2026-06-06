@@ -53,18 +53,23 @@ func (p *CSVParser) parseFromReader(reader *csv.Reader, name string) (*ir.Schema
 		return nil, &ParseError{Msg: "failed to read CSV header: " + err.Error()}
 	}
 
+	sampleRows := p.SampleRows
+	if sampleRows <= 0 {
+		sampleRows = 100
+	}
+
 	columns := make([]*columnInfo, len(headers))
 	for i, h := range headers {
 		columns[i] = &columnInfo{
 			Name:     strings.TrimSpace(h),
 			Path:     strings.TrimSpace(h),
 			Nullable: false,
-			Values:   make([]string, 0, p.SampleRows),
+			Values:   make([]string, 0, sampleRows),
 		}
 	}
 
 	rowCount := 0
-	for rowCount < p.SampleRows {
+	for rowCount < sampleRows {
 		record, err := reader.Read()
 		if err == io.EOF {
 			break
@@ -116,7 +121,7 @@ var (
 		regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:?\d{2})?$`),
 		regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}$`),
 	}
-	boolPattern = regexp.MustCompile(`^(true|false|yes|no|1|0)$`)
+	boolPattern = regexp.MustCompile(`(?i)^(true|false|yes|no|t|f|y|n|1|0)$`)
 )
 
 func (ci *columnInfo) inferField() *ir.Field {
@@ -127,29 +132,27 @@ func (ci *columnInfo) inferField() *ir.Field {
 		return field
 	}
 
-	allMatch := func(pattern *regexp.Regexp) bool {
+	matchCount := func(pattern *regexp.Regexp) int {
+		count := 0
 		for _, v := range ci.Values {
-			if !pattern.MatchString(v) {
-				return false
+			if pattern.MatchString(v) {
+				count++
 			}
 		}
-		return true
+		return count
 	}
 
-	allMatchDates := func(patterns []*regexp.Regexp) bool {
+	matchCountDates := func(patterns []*regexp.Regexp) int {
+		count := 0
 		for _, v := range ci.Values {
-			matched := false
 			for _, p := range patterns {
 				if p.MatchString(v) {
-					matched = true
+					count++
 					break
 				}
 			}
-			if !matched {
-				return false
-			}
 		}
-		return true
+		return count
 	}
 
 	allParseable := func(parseFn func(string) bool) bool {
@@ -161,15 +164,10 @@ func (ci *columnInfo) inferField() *ir.Field {
 		return true
 	}
 
-	if allMatch(boolPattern) && allParseable(func(s string) bool {
-		_, err := strconv.ParseBool(s)
-		return err == nil
-	}) {
-		field.Type = ir.TypeBool
-		return field
-	}
+	total := len(ci.Values)
 
-	if allMatch(intPattern) {
+	intMatches := matchCount(intPattern)
+	if intMatches == total {
 		allInt32 := allParseable(func(s string) bool {
 			_, err := strconv.ParseInt(s, 10, 32)
 			return err == nil
@@ -182,7 +180,8 @@ func (ci *columnInfo) inferField() *ir.Field {
 		return field
 	}
 
-	if allMatch(floatPattern) {
+	floatMatches := matchCount(floatPattern)
+	if floatMatches == total {
 		allFloat32 := allParseable(func(s string) bool {
 			_, err := strconv.ParseFloat(s, 32)
 			return err == nil
@@ -195,13 +194,21 @@ func (ci *columnInfo) inferField() *ir.Field {
 		return field
 	}
 
-	if allMatchDates(datetimePatterns) {
+	datetimeMatches := matchCountDates(datetimePatterns)
+	if datetimeMatches == total {
 		field.Type = ir.TypeDateTime
 		return field
 	}
 
-	if allMatchDates(datePatterns) {
+	dateMatches := matchCountDates(datePatterns)
+	if dateMatches == total {
 		field.Type = ir.TypeDate
+		return field
+	}
+
+	boolMatches := matchCount(boolPattern)
+	if boolMatches == total && allParseable(parseBool) {
+		field.Type = ir.TypeBool
 		return field
 	}
 
@@ -251,4 +258,16 @@ func tryParseDate(s string) bool {
 		}
 	}
 	return false
+}
+
+func parseBool(s string) bool {
+	s = strings.ToLower(s)
+	switch s {
+	case "true", "t", "yes", "y", "1":
+		return true
+	case "false", "f", "no", "n", "0":
+		return true
+	default:
+		return false
+	}
 }

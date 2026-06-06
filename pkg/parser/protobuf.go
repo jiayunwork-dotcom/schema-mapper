@@ -66,10 +66,14 @@ func (p *ProtobufParser) parseMessages(text, namespace string) []*protoMessage {
 	stack := make([]*protoMessage, 0)
 	currentEnum := (*protoEnum)(nil)
 	enumDepth := 0
+	oneofDepth := 0
 
-	i := 0
-	for i < len(lines) {
-		line := strings.TrimSpace(lines[i])
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if line == "" || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") || strings.HasPrefix(line, "*/") || strings.HasPrefix(line, "syntax") || strings.HasPrefix(line, "package") || strings.HasPrefix(line, "import") || strings.HasPrefix(line, "option") {
+			continue
+		}
 
 		if currentEnum != nil {
 			if strings.Contains(line, "{") {
@@ -86,7 +90,23 @@ func (p *ProtobufParser) parseMessages(text, namespace string) []*protoMessage {
 					currentEnum.Values = append(currentEnum.Values, m[1])
 				}
 			}
-			i++
+			continue
+		}
+
+		if oneofDepth > 0 {
+			if strings.Contains(line, "}") {
+				oneofDepth--
+			}
+			fieldMatch := protoFieldRe.FindStringSubmatch(line)
+			if len(fieldMatch) > 4 && len(stack) > 0 {
+				label := fieldMatch[1]
+				typ := fieldMatch[2]
+				name := fieldMatch[3]
+				field := p.parseProtoField(name, typ, label, namespace)
+				if field != nil {
+					stack[len(stack)-1].Fields = append(stack[len(stack)-1].Fields, field)
+				}
+			}
 			continue
 		}
 
@@ -99,14 +119,10 @@ func (p *ProtobufParser) parseMessages(text, namespace string) []*protoMessage {
 				stack[len(stack)-1].Nested = append(stack[len(stack)-1].Nested, msg)
 			}
 			stack = append(stack, msg)
-			depth := strings.Count(line, "{") - strings.Count(line, "}")
-			i++
-			for depth > 0 && i < len(lines) {
-				depth += strings.Count(lines[i], "{") - strings.Count(lines[i], "}")
-				i++
-			}
-			i--
-		} else if enumMatch := protoEnumRe.FindStringSubmatch(line); len(enumMatch) > 1 {
+			continue
+		}
+
+		if enumMatch := protoEnumRe.FindStringSubmatch(line); len(enumMatch) > 1 {
 			enum := &protoEnum{
 				Name: enumMatch[1],
 			}
@@ -115,9 +131,15 @@ func (p *ProtobufParser) parseMessages(text, namespace string) []*protoMessage {
 			}
 			currentEnum = enum
 			enumDepth = strings.Count(line, "{") - strings.Count(line, "}")
-			i++
 			continue
-		} else if fieldMatch := protoFieldRe.FindStringSubmatch(line); len(fieldMatch) > 4 {
+		}
+
+		if oneofMatch := protoOneofRe.FindStringSubmatch(line); len(oneofMatch) > 1 {
+			oneofDepth = strings.Count(line, "{") - strings.Count(line, "}")
+			continue
+		}
+
+		if fieldMatch := protoFieldRe.FindStringSubmatch(line); len(fieldMatch) > 4 {
 			label := fieldMatch[1]
 			typ := fieldMatch[2]
 			name := fieldMatch[3]
@@ -134,8 +156,6 @@ func (p *ProtobufParser) parseMessages(text, namespace string) []*protoMessage {
 			messages = append(messages, stack[len(stack)-1])
 			stack = stack[:len(stack)-1]
 		}
-
-		i++
 	}
 
 	return messages

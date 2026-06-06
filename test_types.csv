@@ -1,0 +1,6 @@
+id,price,active,register_date,name,description
+1,9.99,true,2024-01-15,Alice,
+2,19.99,false,2024-02-20,Bob,Developer
+3,29.99,True,2024-03-10,Charlie,
+4,39.99,FALSE,2024-04-05,Dave,Manager
+5,49.99,yes,2024-05-15,Eve,

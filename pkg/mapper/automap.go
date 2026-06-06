@@ -10,53 +10,63 @@ import (
 )
 
 var AbbreviationMap = map[string]string{
-	"id":    "identifier",
-	"ids":   "identifiers",
-	"ts":    "timestamp",
-	"addr":  "address",
-	"dept":  "department",
-	"qty":   "quantity",
-	"num":   "number",
-	"desc":  "description",
-	"name":  "name",
-	"fn":    "firstname",
-	"ln":    "lastname",
-	"dob":   "dateofbirth",
-	"dod":   "dateofdeath",
-	"created": "createdat",
-	"updated": "updatedat",
-	"deleted": "deletedat",
-	"usr":   "user",
-	"pwd":   "password",
-	"pwdhash": "passwordhash",
-	"email": "emailaddress",
-	"phone": "phonenumber",
-	"zip":   "zipcode",
-	"city":  "city",
-	"st":    "state",
-	"street": "streetaddress",
-	"lat":   "latitude",
-	"lon":   "longitude",
-	"lng":   "longitude",
-	"temp":  "temperature",
-	"hum":   "humidity",
-	"pres":  "pressure",
-	"vel":   "velocity",
-	"acc":   "acceleration",
-	"ref":   "reference",
-	"seq":   "sequence",
-	"cfg":   "configuration",
-	"config": "configuration",
-	"stat":  "status",
-	"cnt":   "count",
-	"tot":   "total",
-	"avg":   "average",
-	"min":   "minimum",
-	"max":   "maximum",
-	"sum":   "summary",
-	"idx":   "index",
-	"pos":   "position",
-	"loc":   "location",
+	"id":         "identifier",
+	"ids":        "identifiers",
+	"ts":         "timestamp",
+	"addr":       "address",
+	"dept":       "department",
+	"qty":        "quantity",
+	"num":        "number",
+	"desc":       "description",
+	"fn":         "firstname",
+	"ln":         "lastname",
+	"dob":        "dateofbirth",
+	"dod":        "dateofdeath",
+	"created":    "createdat",
+	"create":     "createdat",
+	"updated":    "updatedat",
+	"update":     "updatedat",
+	"deleted":    "deletedat",
+	"delete":     "deletedat",
+	"usr":        "user",
+	"pwd":        "password",
+	"pwdhash":    "passwordhash",
+	"email":      "emailaddress",
+	"phone":      "phonenumber",
+	"zip":        "zipcode",
+	"postal":     "zipcode",
+	"st":         "state",
+	"street":     "streetaddress",
+	"lat":        "latitude",
+	"lon":        "longitude",
+	"lng":        "longitude",
+	"temp":       "temperature",
+	"hum":        "humidity",
+	"pres":       "pressure",
+	"vel":        "velocity",
+	"acc":        "acceleration",
+	"ref":        "reference",
+	"seq":        "sequence",
+	"cfg":        "configuration",
+	"config":     "configuration",
+	"stat":       "status",
+	"account":    "status",
+	"cnt":        "count",
+	"tot":        "total",
+	"avg":        "average",
+	"min":        "minimum",
+	"max":        "maximum",
+	"sum":        "summary",
+	"idx":        "index",
+	"pos":        "position",
+	"loc":        "location",
+	"time":       "timestamp",
+	"date":       "timestamp",
+	"datetime":   "timestamp",
+	"userid":     "identifier",
+	"age":        "userage",
+	"status":     "accountstatus",
+	"active":     "accountstatus",
 }
 
 type MappingSuggestion struct {
@@ -83,7 +93,7 @@ type AutoMapper struct {
 
 func NewAutoMapper() *AutoMapper {
 	return &AutoMapper{
-		SimilarityThreshold: 0.7,
+		SimilarityThreshold: 0.5,
 	}
 }
 
@@ -162,29 +172,38 @@ func (am *AutoMapper) findBestMatch(src *ir.Field, targets []*ir.Field) *Mapping
 }
 
 func (am *AutoMapper) calculateMatch(src, tgt *ir.Field) *MappingSuggestion {
-	srcPath := normalizeForMatch(src.Path)
-	tgtPath := normalizeForMatch(tgt.Path)
+	normSrcPath := normalizeForMatch(src.Path)
+	normTgtPath := normalizeForMatch(tgt.Path)
 
-	srcName := normalizeForMatch(src.Name)
-	tgtName := normalizeForMatch(tgt.Name)
+	normSrcName := normalizeForMatch(src.Name)
+	normTgtName := normalizeForMatch(tgt.Name)
 
 	confidence := 0.0
 	matchType := ""
 
-	if strings.EqualFold(srcName, tgtName) || strings.EqualFold(srcPath, tgtPath) {
+	if normSrcName == normTgtName || normSrcPath == normTgtPath {
 		confidence = 1.0
 		matchType = "exact"
 	} else {
-		sim := max(
-			normalizedLevenshtein(srcName, tgtName),
-			normalizedLevenshtein(srcPath, tgtPath),
-			semanticMatch(srcName, tgtName),
-			semanticMatch(srcPath, tgtPath),
+		levSim := max(
+			normalizedLevenshtein(normSrcName, normTgtName),
+			normalizedLevenshtein(normSrcPath, normTgtPath),
 		)
+
+		semSim := max(
+			semanticMatch(src.Name, tgt.Name),
+			semanticMatch(src.Path, tgt.Path),
+		)
+
+		sim := max(levSim, semSim)
 
 		if sim >= am.SimilarityThreshold {
 			confidence = sim
-			matchType = "similarity"
+			if semSim > levSim {
+				matchType = "semantic"
+			} else {
+				matchType = "similarity"
+			}
 		} else {
 			return nil
 		}
@@ -364,7 +383,6 @@ func semanticMatch(s1, s2 string) float64 {
 }
 
 func splitIntoTokens(s string) []string {
-	s = strings.ToLower(s)
 	var tokens []string
 	var current strings.Builder
 
@@ -384,7 +402,10 @@ func splitIntoTokens(s string) []string {
 
 	result := make([]string, 0)
 	for _, t := range tokens {
-		result = append(result, splitCamelCase(t)...)
+		split := splitCamelCase(t)
+		for _, s := range split {
+			result = append(result, strings.ToLower(s))
+		}
 	}
 	return result
 }

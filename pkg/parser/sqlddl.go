@@ -13,7 +13,7 @@ type SQLDDLParser struct{}
 
 var (
 	sqlCreateTableRe = regexp.MustCompile(`(?i)CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([\w.]+)\s*\(`)
-	sqlColumnRe      = regexp.MustCompile(`(?i)^\s*(\w+)\s+([\w()]+(?:\s+UNSIGNED)?)\s*(.*?)(?:,|$)`)
+	sqlColumnRe      = regexp.MustCompile(`(?i)^\s*(\w+)\s+([\w(),]+(?:\s+UNSIGNED)?)\s*(.*?)(?:,|$)`)
 	sqlConstraintRe  = regexp.MustCompile(`(?i)^\s*(PRIMARY\s+KEY|UNIQUE|FOREIGN\s+KEY|CHECK|CONSTRAINT)\s+`)
 	sqlDefaultRe     = regexp.MustCompile(`(?i)DEFAULT\s+(.+?)(?:\s+|$)`)
 	sqlCommentRe     = regexp.MustCompile(`(?i)COMMENT\s+'([^']*)'`)
@@ -78,7 +78,7 @@ func (p *SQLDDLParser) parseColumns(body string) []*ir.Field {
 
 		if colMatch := sqlColumnRe.FindStringSubmatch(line); len(colMatch) >= 3 {
 			name := colMatch[1]
-			sqlType := colMatch[2]
+			sqlType := strings.Trim(colMatch[2], ",")
 			modifiers := colMatch[3]
 
 			field := ir.NewField(name, name, p.sqlTypeToIR(sqlType))
@@ -112,6 +112,11 @@ func (p *SQLDDLParser) sqlTypeToIR(sqlType string) ir.BaseType {
 	typ = strings.TrimSpace(typ)
 
 	switch {
+	case strings.Contains(typ, "serial"):
+		if strings.Contains(typ, "big") {
+			return ir.TypeInt64
+		}
+		return ir.TypeInt32
 	case strings.Contains(typ, "int"):
 		if strings.Contains(typ, "big") {
 			return ir.TypeInt64

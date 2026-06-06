@@ -22,7 +22,7 @@ func NewParserRegistry() *ParserRegistry {
 	pr.Register(&AvroParser{})
 	pr.Register(&ProtobufParser{})
 	pr.Register(&SQLDDLParser{})
-	pr.Register(&CSVParser{})
+	pr.Register(NewCSVParser())
 	pr.Register(&XSDParser{})
 	return pr
 }
@@ -52,7 +52,7 @@ func (pr *ParserRegistry) ParseFile(filePath string, format string) (*ir.Schema,
 		case "sql", "ddl":
 			return (&SQLDDLParser{}).ParseFile(filePath)
 		case "csv":
-			return (&CSVParser{}).ParseFile(filePath)
+			return NewCSVParser().ParseFile(filePath)
 		case "xsd", "xml-schema":
 			return (&XSDParser{}).ParseFile(filePath)
 		}

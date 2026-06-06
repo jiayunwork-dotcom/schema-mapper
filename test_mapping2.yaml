@@ -1,0 +1,72 @@
+# Auto-generated mapping rules
+# Confidence threshold: 0.7 (marked as needs_review below this)
+
+mappings:
+  - source: address.street
+    target: street
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: address.city
+    target: city
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: address.zip_code
+    target: postalCode
+    transform: direct
+    confidence: 0.50
+    match_type: semantic
+    needs_review: true
+
+  - source: tags.items
+    target: userTags.items
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: status
+    target: accountStatus
+    transform: cast
+    confidence: 0.67
+    match_type: semantic
+    needs_review: true
+    warnings:
+      - Potentially unsafe type conversion: enum -> string
+
+  - source: id
+    target: userId
+    transform: direct
+    confidence: 0.67
+    match_type: semantic
+    needs_review: true
+
+  - source: user_name
+    target: userName
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: email
+    target: emailAddress
+    transform: direct
+    confidence: 0.67
+    match_type: semantic
+    needs_review: true
+
+  - source: age
+    target: userAge
+    transform: direct
+    confidence: 0.67
+    match_type: semantic
+    needs_review: true
+
+  - source: create_time
+    target: createdAt
+    transform: direct
+    confidence: 0.60
+    match_type: similarity
+    needs_review: true
+
