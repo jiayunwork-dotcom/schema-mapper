@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,7 +18,9 @@ import (
 	"github.com/schema-mapper/schema-mapper/pkg/editor"
 	"github.com/schema-mapper/schema-mapper/pkg/ir"
 	"github.com/schema-mapper/schema-mapper/pkg/mapper"
+	"github.com/schema-mapper/schema-mapper/pkg/migration"
 	"github.com/schema-mapper/schema-mapper/pkg/parser"
+	"github.com/schema-mapper/schema-mapper/pkg/registry"
 	"github.com/schema-mapper/schema-mapper/pkg/report"
 )
 
@@ -59,6 +62,8 @@ batch processing, and report generation.`,
 	rootCmd.AddCommand(newBatchCmd())
 	rootCmd.AddCommand(newReportCmd())
 	rootCmd.AddCommand(newEditCmd())
+	rootCmd.AddCommand(newRegistryCmd())
+	rootCmd.AddCommand(newMigrateCmd())
 	rootCmd.AddCommand(newVersionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -461,4 +466,492 @@ func detectFormat(path string) string {
 	default:
 		return ""
 	}
+}
+
+func newRegistryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "registry",
+		Short: "Schema version registry management",
+		Long:  "Manage schema version registry for tracking schema evolution and generating migration scripts.",
+	}
+
+	cmd.AddCommand(newRegistryInitCmd())
+	cmd.AddCommand(newRegistryAddCmd())
+	cmd.AddCommand(newRegistryListCmd())
+	cmd.AddCommand(newRegistryShowCmd())
+	cmd.AddCommand(newRegistryDiffCmd())
+
+	return cmd
+}
+
+func newRegistryInitCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize a new schema registry in current directory",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg := registry.NewRegistry(cwd)
+			if err := reg.Init(); err != nil {
+				return err
+			}
+
+			fmt.Printf("Schema registry initialized at: %s\n", reg.RegistryPath())
+			return nil
+		},
+	}
+	return cmd
+}
+
+func newRegistryAddCmd() *cobra.Command {
+	var schemaName, version string
+
+	cmd := &cobra.Command{
+		Use:   "add [schema-file]",
+		Short: "Add a schema version to the registry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg, err := registry.FindRegistry(cwd)
+			if err != nil {
+				return err
+			}
+
+			if err := reg.AddSchemaVersion(schemaName, version, args[0]); err != nil {
+				return err
+			}
+
+			fmt.Printf("Schema %s version %s added successfully\n", schemaName, version)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&schemaName, "name", "", "Schema name (required)")
+	cmd.Flags().StringVar(&version, "version", "", "Semantic version (major.minor.patch, required)")
+	cmd.MarkFlagRequired("name")
+	cmd.MarkFlagRequired("version")
+
+	return cmd
+}
+
+func newRegistryListCmd() *cobra.Command {
+	var schemaName string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all registered schemas and their versions",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg, err := registry.FindRegistry(cwd)
+			if err != nil {
+				return err
+			}
+
+			if schemaName != "" {
+				versions, err := reg.GetSchemaVersions(schemaName)
+				if err != nil {
+					return err
+				}
+				sort.Sort(registry.SemVerList(versions))
+
+				return outputSchemaVersions(schemaName, versions)
+			}
+
+			allSchemas, err := reg.GetAllSchemas()
+			if err != nil {
+				return err
+			}
+
+			return outputAllSchemas(allSchemas)
+		},
+	}
+
+	cmd.Flags().StringVar(&schemaName, "name", "", "Filter by schema name")
+	return cmd
+}
+
+func newRegistryShowCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show [schema-name] [version]",
+		Short: "Show a specific schema version",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg, err := registry.FindRegistry(cwd)
+			if err != nil {
+				return err
+			}
+
+			schema, err := reg.GetSchema(args[0], args[1])
+			if err != nil {
+				return err
+			}
+
+			return outputSchema(schema)
+		},
+	}
+	return cmd
+}
+
+func newRegistryDiffCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "diff [schema-name] [v1] [v2]",
+		Short: "Compare two schema versions and show differences with migration impact",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg, err := registry.FindRegistry(cwd)
+			if err != nil {
+				return err
+			}
+
+			schema1, err := reg.GetSchema(args[0], args[1])
+			if err != nil {
+				return err
+			}
+
+			schema2, err := reg.GetSchema(args[0], args[2])
+			if err != nil {
+				return err
+			}
+
+			diffResult := diff.CompareSchemas(schema1, schema2)
+
+			_, impact, err := migration.GenerateMigrationScript(reg, args[0], args[1], args[2])
+			if err != nil {
+				return err
+			}
+
+			if strings.ToLower(outputFormat) == "json" {
+				return outputRegistryDiffJSON(diffResult, impact)
+			}
+
+			diffResult.PrintColored()
+			return outputMigrationImpact(impact)
+		},
+	}
+	return cmd
+}
+
+func newMigrateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Schema migration script generation and execution",
+		Long:  "Generate, validate, and apply data migration scripts based on schema version differences.",
+	}
+
+	cmd.AddCommand(newMigrateGenerateCmd())
+	cmd.AddCommand(newMigrateValidateCmd())
+	cmd.AddCommand(newMigrateApplyCmd())
+
+	return cmd
+}
+
+func newMigrateGenerateCmd() *cobra.Command {
+	var fromV, toV, outputDir string
+
+	cmd := &cobra.Command{
+		Use:   "generate [schema-name]",
+		Short: "Generate migration script between two schema versions",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg, err := registry.FindRegistry(cwd)
+			if err != nil {
+				return err
+			}
+
+			script, impact, err := migration.GenerateMigrationScript(reg, args[0], fromV, toV)
+			if err != nil {
+				return err
+			}
+
+			if outputDir != "" {
+				if err := os.MkdirAll(outputDir, 0755); err != nil {
+					return fmt.Errorf("failed to create output directory: %w", err)
+				}
+
+				fileName := fmt.Sprintf("migrate_%s_to_%s.yaml", fromV, toV)
+				filePath := filepath.Join(outputDir, fileName)
+				if err := script.Save(filePath); err != nil {
+					return err
+				}
+				fmt.Printf("Migration script saved to: %s\n", filePath)
+			}
+
+			if strings.ToLower(outputFormat) == "json" {
+				jsonStr, err := script.ToJSON()
+				if err != nil {
+					return err
+				}
+				fmt.Println(jsonStr)
+				return nil
+			}
+
+			return outputMigrationScript(script, impact)
+		},
+	}
+
+	cmd.Flags().StringVar(&fromV, "from", "", "Source version (required)")
+	cmd.Flags().StringVar(&toV, "to", "", "Target version (required)")
+	cmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory for migration script")
+	cmd.MarkFlagRequired("from")
+	cmd.MarkFlagRequired("to")
+
+	return cmd
+}
+
+func newMigrateValidateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "validate [migration-script.yaml]",
+		Short: "Validate a migration script for correctness",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg, err := registry.FindRegistry(cwd)
+			if err != nil {
+				return err
+			}
+
+			script, err := migration.LoadMigrationScript(args[0])
+			if err != nil {
+				return err
+			}
+
+			errors := migration.ValidateMigrationScript(script, reg)
+
+			if strings.ToLower(outputFormat) == "json" {
+				return outputValidationErrorsJSON(errors)
+			}
+
+			return outputValidationErrors(errors)
+		},
+	}
+	return cmd
+}
+
+func newMigrateApplyCmd() *cobra.Command {
+	var sourceFile, outputFile, inputFormat, outFormat string
+	var showProgress bool
+
+	cmd := &cobra.Command{
+		Use:   "apply [migration-script.yaml]",
+		Short: "Apply a migration script to data files",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := converter.ConversionOptions{
+				ShowProgress: showProgress,
+			}
+			if inputFormat != "" {
+				opts.InputFormat = converter.DataFormat(inputFormat)
+			}
+			if outFormat != "" {
+				opts.OutputFormat = converter.DataFormat(outFormat)
+			}
+
+			result, err := migration.ApplyMigrationScript(args[0], sourceFile, outputFile, opts)
+			if err != nil {
+				return err
+			}
+
+			if strings.ToLower(outputFormat) == "json" {
+				fmt.Println(result.ToJSON())
+				return nil
+			}
+
+			result.Print()
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&sourceFile, "source", "", "Source data file (required)")
+	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file path (required)")
+	cmd.Flags().StringVar(&inputFormat, "input-format", "", "Input format: json, csv, ndjson")
+	cmd.Flags().StringVar(&outFormat, "output-format", "", "Output format: json, csv, ndjson")
+	cmd.Flags().BoolVarP(&showProgress, "progress", "p", true, "Show progress bar")
+	cmd.MarkFlagRequired("source")
+	cmd.MarkFlagRequired("output")
+
+	return cmd
+}
+
+func outputSchemaVersions(schemaName string, versions []*registry.SemVer) error {
+	fmt.Printf("Schema: %s\n", schemaName)
+	fmt.Println("Versions (latest first):")
+	for i, v := range versions {
+		fmt.Printf("  %d. %s\n", i+1, v.String())
+	}
+	if len(versions) == 0 {
+		fmt.Println("  (no versions registered)")
+	}
+	return nil
+}
+
+func outputAllSchemas(schemas map[string][]*registry.SemVer) error {
+	if len(schemas) == 0 {
+		fmt.Println("No schemas registered in registry.")
+		return nil
+	}
+
+	names := make([]string, 0, len(schemas))
+	for name := range schemas {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		versions := schemas[name]
+		fmt.Printf("\nSchema: %s\n", name)
+		fmt.Printf("  Version count: %d\n", len(versions))
+		if len(versions) > 0 {
+			versionStrs := make([]string, 0, len(versions))
+			for _, v := range versions {
+				versionStrs = append(versionStrs, v.String())
+			}
+			fmt.Printf("  Versions: %s\n", strings.Join(versionStrs, ", "))
+		}
+	}
+	return nil
+}
+
+func outputMigrationImpact(impact *migration.MigrationImpact) error {
+	fmt.Println("\n\033[1m=== Migration Impact Assessment ===\033[0m")
+	fmt.Printf("Affected fields:    %d\n", impact.AffectedFields)
+	fmt.Printf("Has breaking change: %v\n", impact.HasBreakingChange)
+	if len(impact.BreakingChanges) > 0 {
+		fmt.Println("Breaking changes:")
+		for _, bc := range impact.BreakingChanges {
+			fmt.Printf("  - %s\n", bc)
+		}
+	}
+
+	riskColor := "\033[32m"
+	switch impact.RiskLevel {
+	case migration.RiskMedium:
+		riskColor = "\033[33m"
+	case migration.RiskHigh:
+		riskColor = "\033[31m"
+	}
+
+	fmt.Printf("Risk level:         %s%s\033[0m\n", riskColor, impact.RiskLevel)
+	fmt.Printf("Migration strategy: %s\n", impact.MigrationStrategy)
+
+	return nil
+}
+
+func outputRegistryDiffJSON(dr *diff.DiffResult, impact *migration.MigrationImpact) error {
+	type output struct {
+		Diff   *diff.DiffResult         `json:"diff"`
+		Impact *migration.MigrationImpact `json:"migrationImpact"`
+	}
+	b, err := json.MarshalIndent(output{Diff: dr, Impact: impact}, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+	return nil
+}
+
+func outputMigrationScript(script *migration.MigrationScript, impact *migration.MigrationImpact) error {
+	fmt.Printf("=== Migration Script: %s %s -> %s\n", script.SchemaName, script.FromVersion, script.ToVersion)
+	fmt.Printf("Created at: %s\n\n", script.CreatedAt)
+	fmt.Printf("Operations (%d):\n", len(script.Operations))
+
+	for i, op := range script.Operations {
+		riskColor := "\033[32m"
+		switch op.RiskLevel {
+		case migration.RiskMedium:
+			riskColor = "\033[33m"
+		case migration.RiskHigh:
+			riskColor = "\033[31m"
+		}
+
+		fmt.Printf("\n  \033[1m[%d] %s%s\033[0m\n", i+1, riskColor, op.Op)
+		fmt.Printf("      Field: %s\n", op.FieldPath)
+		if op.NewFieldPath != "" {
+			fmt.Printf("      New field: %s\n", op.NewFieldPath)
+		}
+		if op.NewType != "" {
+			fmt.Printf("      Type: %s -> %s\n", op.OldType, op.NewType)
+		}
+		if op.DefaultValue != nil {
+			fmt.Printf("      Default value: %v\n", op.DefaultValue)
+		}
+		if op.FallbackValue != nil {
+			fmt.Printf("      Fallback value: %v\n", op.FallbackValue)
+		}
+		fmt.Printf("      Risk: %s%s\033[0m\n", riskColor, op.RiskLevel)
+		fmt.Printf("      %s\n", op.Description)
+	}
+
+	fmt.Println()
+	outputMigrationImpact(impact)
+
+	return nil
+}
+
+func outputValidationErrors(errors []migration.ValidationError) error {
+	if len(errors) == 0 {
+		fmt.Println("\033[32m✓ Migration script is valid!\033[0m")
+		return nil
+	}
+
+	fmt.Printf("\033[31m✗ Found %d validation error(s):\033[0m\n", len(errors))
+	for _, e := range errors {
+		fmt.Printf("  %s\n", e.String())
+	}
+	os.Exit(1)
+	return nil
+}
+
+func outputValidationErrorsJSON(errors []migration.ValidationError) error {
+	type output struct {
+		Valid   bool                       `json:"valid"`
+		Errors  []migration.ValidationError `json:"errors,omitempty"`
+		Count   int                        `json:"errorCount"`
+	}
+
+	out := output{
+		Valid:  len(errors) == 0,
+		Errors: errors,
+		Count:  len(errors),
+	}
+
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+
+	if len(errors) > 0 {
+		os.Exit(1)
+	}
+	return nil
 }
