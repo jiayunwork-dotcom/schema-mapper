@@ -140,8 +140,8 @@ func checkDependencyConflicts(script *MigrationScript) []ValidationError {
 				if op1.NewFieldPath == op2.FieldPath {
 					errors = append(errors, ValidationError{
 						OperationIndex: j,
-						Message: "dependency conflict: rename at [" + 
-							op1.FieldPath + " -> " + op1.NewFieldPath + 
+						Message: "dependency conflict: rename at [" +
+							op1.FieldPath + " -> " + op1.NewFieldPath +
 							"] should come after change_type at [" + op2.FieldPath + "]",
 					})
 				}
@@ -151,7 +151,7 @@ func checkDependencyConflicts(script *MigrationScript) []ValidationError {
 				if op1.FieldPath == op2.FieldPath {
 					errors = append(errors, ValidationError{
 						OperationIndex: j,
-						Message: "dependency conflict: change_type at [" + op1.FieldPath + 
+						Message: "dependency conflict: change_type at [" + op1.FieldPath +
 							"] should come before rename at [" + op2.FieldPath + " -> " + op2.NewFieldPath + "]",
 					})
 				}
@@ -161,7 +161,7 @@ func checkDependencyConflicts(script *MigrationScript) []ValidationError {
 				if op1.NewFieldPath == op2.FieldPath {
 					errors = append(errors, ValidationError{
 						OperationIndex: j,
-						Message: "rename chaining detected: [" + op1.FieldPath + " -> " + op1.NewFieldPath + 
+						Message: "rename chaining detected: [" + op1.FieldPath + " -> " + op1.NewFieldPath +
 							"] and [" + op2.FieldPath + " -> " + op2.NewFieldPath + "], should combine into single rename",
 					})
 				}
@@ -171,7 +171,7 @@ func checkDependencyConflicts(script *MigrationScript) []ValidationError {
 				if op1.FieldPath == op2.FieldPath {
 					errors = append(errors, ValidationError{
 						OperationIndex: j,
-						Message: "field " + op1.FieldPath + " was removed at operation[" + 
+						Message: "field " + op1.FieldPath + " was removed at operation[" +
 							string(rune(i)) + "], cannot be used in operation[" + string(rune(j)) + "]",
 					})
 				}

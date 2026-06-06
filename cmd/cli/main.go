@@ -662,6 +662,10 @@ func newMigrateCmd() *cobra.Command {
 	cmd.AddCommand(newMigrateGenerateCmd())
 	cmd.AddCommand(newMigrateValidateCmd())
 	cmd.AddCommand(newMigrateApplyCmd())
+	cmd.AddCommand(newMigratePlanCmd())
+	cmd.AddCommand(newMigrateDryRunCmd())
+	cmd.AddCommand(newMigrateExecuteCmd())
+	cmd.AddCommand(newMigrateRollbackCmd())
 
 	return cmd
 }
@@ -868,7 +872,7 @@ func outputMigrationImpact(impact *migration.MigrationImpact) error {
 
 func outputRegistryDiffJSON(dr *diff.DiffResult, impact *migration.MigrationImpact) error {
 	type output struct {
-		Diff   *diff.DiffResult         `json:"diff"`
+		Diff   *diff.DiffResult           `json:"diff"`
 		Impact *migration.MigrationImpact `json:"migrationImpact"`
 	}
 	b, err := json.MarshalIndent(output{Diff: dr, Impact: impact}, "", "  ")
@@ -933,9 +937,9 @@ func outputValidationErrors(errors []migration.ValidationError) error {
 
 func outputValidationErrorsJSON(errors []migration.ValidationError) error {
 	type output struct {
-		Valid   bool                       `json:"valid"`
-		Errors  []migration.ValidationError `json:"errors,omitempty"`
-		Count   int                        `json:"errorCount"`
+		Valid  bool                        `json:"valid"`
+		Errors []migration.ValidationError `json:"errors,omitempty"`
+		Count  int                         `json:"errorCount"`
 	}
 
 	out := output{
@@ -954,4 +958,215 @@ func outputValidationErrorsJSON(errors []migration.ValidationError) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+func newMigratePlanCmd() *cobra.Command {
+	var fromV, toV, dataSample, outputDir string
+
+	cmd := &cobra.Command{
+		Use:   "plan [schema-name]",
+		Short: "Generate a migration plan with preview and risk assessment",
+		Long: `Generate a migration plan file (plan.yaml) that includes:
+- Source and target version information
+- Total number of operation steps
+- Risk statistics grouped by risk level (low/medium/high)
+- Estimated affected records (if --data-sample is provided)
+- Data quality warnings from sample analysis`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			reg, err := registry.FindRegistry(cwd)
+			if err != nil {
+				return err
+			}
+
+			plan, err := migration.GenerateMigrationPlan(reg, args[0], fromV, toV, dataSample)
+			if err != nil {
+				return err
+			}
+
+			if outputDir != "" {
+				if err := os.MkdirAll(outputDir, 0755); err != nil {
+					return fmt.Errorf("failed to create output directory: %w", err)
+				}
+				filePath := filepath.Join(outputDir, "plan.yaml")
+				if err := plan.Save(filePath); err != nil {
+					return err
+				}
+				fmt.Printf("Migration plan saved to: %s\n", filePath)
+			}
+
+			if strings.ToLower(outputFormat) == "json" {
+				jsonStr, err := plan.ToJSON()
+				if err != nil {
+					return err
+				}
+				fmt.Println(jsonStr)
+				return nil
+			}
+
+			plan.Print()
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&fromV, "from", "", "Source version (required)")
+	cmd.Flags().StringVar(&toV, "to", "", "Target version (required)")
+	cmd.Flags().StringVar(&dataSample, "data-sample", "", "Path to data sample file for quality analysis")
+	cmd.Flags().StringVarP(&outputDir, "output", "o", "", "Output directory for plan.yaml")
+	cmd.MarkFlagRequired("from")
+	cmd.MarkFlagRequired("to")
+
+	return cmd
+}
+
+func newMigrateDryRunCmd() *cobra.Command {
+	var sourceFile, outputFile string
+
+	cmd := &cobra.Command{
+		Use:   "dry-run [plan.yaml]",
+		Short: "Simulate migration execution and generate detailed report",
+		Long: `Simulate executing a migration plan without writing output files.
+Generates a detailed JSON report including:
+- Success and failure counts per operation
+- Skipped fields statistics grouped by path
+- Missing fallback value failures
+- Top 3 failure reasons per operation
+- Recommendations for high-risk operations with >5% failure rate`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			report, err := migration.DryRunMigration(args[0], sourceFile)
+			if err != nil {
+				return err
+			}
+
+			if outputFile != "" {
+				if err := report.Save(outputFile); err != nil {
+					return fmt.Errorf("failed to save dry-run report: %w", err)
+				}
+				fmt.Printf("Dry-run report saved to: %s\n", outputFile)
+			}
+
+			if strings.ToLower(outputFormat) == "json" {
+				jsonStr, err := report.ToJSON()
+				if err != nil {
+					return err
+				}
+				fmt.Println(jsonStr)
+				return nil
+			}
+
+			report.Print()
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&sourceFile, "source", "", "Source data file (required)")
+	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output JSON report file")
+	cmd.MarkFlagRequired("source")
+
+	return cmd
+}
+
+func newMigrateExecuteCmd() *cobra.Command {
+	var sourceFile, outputFile, inputFormat, outFormat string
+	var step int
+	var showProgress bool
+
+	cmd := &cobra.Command{
+		Use:   "execute [plan.yaml]",
+		Short: "Execute migration plan with step control and checkpoint support",
+		Long: `Execute a migration plan with support for:
+- Partial execution: only execute first N steps with --step N
+- Checkpoint resume: if plan has partial state, continue from last executed step
+- Automatic rollback script generation for each execution batch`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := converter.ConversionOptions{
+				ShowProgress: showProgress,
+			}
+			if inputFormat != "" {
+				opts.InputFormat = converter.DataFormat(inputFormat)
+			}
+			if outFormat != "" {
+				opts.OutputFormat = converter.DataFormat(outFormat)
+			}
+
+			result, err := migration.ExecuteMigrationPlan(args[0], sourceFile, outputFile, step, opts)
+			if err != nil {
+				return err
+			}
+
+			if strings.ToLower(outputFormat) == "json" {
+				fmt.Println(result.ToJSON())
+				return nil
+			}
+
+			result.Print()
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&sourceFile, "source", "", "Source data file (required)")
+	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file path (required)")
+	cmd.Flags().IntVar(&step, "step", 0, "Execute only first N steps (0 = all steps)")
+	cmd.Flags().StringVar(&inputFormat, "input-format", "", "Input format: json, csv, ndjson")
+	cmd.Flags().StringVar(&outFormat, "output-format", "", "Output format: json, csv, ndjson")
+	cmd.Flags().BoolVarP(&showProgress, "progress", "p", true, "Show progress bar")
+	cmd.MarkFlagRequired("source")
+	cmd.MarkFlagRequired("output")
+
+	return cmd
+}
+
+func newMigrateRollbackCmd() *cobra.Command {
+	var sourceFile, outputFile, inputFormat, outFormat string
+	var showProgress bool
+
+	cmd := &cobra.Command{
+		Use:   "rollback [rollback-script.yaml]",
+		Short: "Execute a rollback script to undo previous migration",
+		Long: `Execute a rollback script generated by a previous migrate execute command.
+The rollback script contains inverse operations to restore the data to its previous state.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := converter.ConversionOptions{
+				ShowProgress: showProgress,
+			}
+			if inputFormat != "" {
+				opts.InputFormat = converter.DataFormat(inputFormat)
+			}
+			if outFormat != "" {
+				opts.OutputFormat = converter.DataFormat(outFormat)
+			}
+
+			result, err := migration.RollbackMigration(args[0], sourceFile, outputFile, opts)
+			if err != nil {
+				return err
+			}
+
+			if strings.ToLower(outputFormat) == "json" {
+				fmt.Println(result.ToJSON())
+				return nil
+			}
+
+			fmt.Println("\n=== Rollback Result ===")
+			result.Print()
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&sourceFile, "source", "", "Source data file (required)")
+	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file path (required)")
+	cmd.Flags().StringVar(&inputFormat, "input-format", "", "Input format: json, csv, ndjson")
+	cmd.Flags().StringVar(&outFormat, "output-format", "", "Output format: json, csv, ndjson")
+	cmd.Flags().BoolVarP(&showProgress, "progress", "p", true, "Show progress bar")
+	cmd.MarkFlagRequired("source")
+	cmd.MarkFlagRequired("output")
+
+	return cmd
 }

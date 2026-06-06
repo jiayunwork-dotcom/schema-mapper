@@ -95,6 +95,10 @@ func (dc *DataConverter) ConvertFile(inputPath, mappingPath, outputPath string) 
 }
 
 func detectFormat(path string) DataFormat {
+	return DetectFormat(path)
+}
+
+func DetectFormat(path string) DataFormat {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".json":

@@ -183,6 +183,10 @@ func (re *RuleEngine) applyRule(rule *MappingRule, ctx *TransformContext, result
 }
 
 func getNestedValue(data map[string]interface{}, path string) (interface{}, bool) {
+	return GetNestedValue(data, path)
+}
+
+func GetNestedValue(data map[string]interface{}, path string) (interface{}, bool) {
 	parts := strings.Split(path, ".")
 	var current interface{} = data
 
@@ -201,6 +205,10 @@ func getNestedValue(data map[string]interface{}, path string) (interface{}, bool
 }
 
 func setNestedValue(data map[string]interface{}, path string, value interface{}) {
+	SetNestedValue(data, path, value)
+}
+
+func SetNestedValue(data map[string]interface{}, path string, value interface{}) {
 	parts := strings.Split(path, ".")
 	current := data
 
