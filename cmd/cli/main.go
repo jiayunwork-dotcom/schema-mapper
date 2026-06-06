@@ -14,6 +14,7 @@ import (
 	"github.com/schema-mapper/schema-mapper/pkg/config"
 	"github.com/schema-mapper/schema-mapper/pkg/converter"
 	"github.com/schema-mapper/schema-mapper/pkg/diff"
+	"github.com/schema-mapper/schema-mapper/pkg/editor"
 	"github.com/schema-mapper/schema-mapper/pkg/ir"
 	"github.com/schema-mapper/schema-mapper/pkg/mapper"
 	"github.com/schema-mapper/schema-mapper/pkg/parser"
@@ -57,6 +58,7 @@ batch processing, and report generation.`,
 	rootCmd.AddCommand(newCheckCmd())
 	rootCmd.AddCommand(newBatchCmd())
 	rootCmd.AddCommand(newReportCmd())
+	rootCmd.AddCommand(newEditCmd())
 	rootCmd.AddCommand(newVersionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
@@ -307,6 +309,35 @@ func newReportCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output JSON report file")
+	return cmd
+}
+
+func newEditCmd() *cobra.Command {
+	var sourceSchemaPath, targetSchemaPath string
+
+	cmd := &cobra.Command{
+		Use:   "edit [mapping-file]",
+		Short: "Interactive mapping editor",
+		Long: `Open an interactive terminal interface to edit mapping rules.
+Use arrow keys or j/k to navigate, and various keys to perform operations on mappings.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ed, err := editor.NewEditor(args[0], sourceSchemaPath, targetSchemaPath)
+			if err != nil {
+				return fmt.Errorf("failed to initialize editor: %w", err)
+			}
+
+			if err := ed.Run(); err != nil {
+				return err
+			}
+
+			fmt.Println("Editor closed successfully.")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&sourceSchemaPath, "source", "", "Source schema file path")
+	cmd.Flags().StringVar(&targetSchemaPath, "target", "", "Target schema file path")
 	return cmd
 }
 
