@@ -31,7 +31,7 @@ func DryRunMigration(planPath, sourceFile string) (*DryRunReport, error) {
 		TotalRecords:            totalRecords,
 		SkippedFieldStats:       make(map[string]int64),
 		MissingFallbackFailures: 0,
-		OperationStats:          make([]*OperationDryRunStats, 0, len(plan.Operations)),
+		OperationResults:        make([]*OperationDryRunStats, 0, len(plan.Operations)),
 		CreatedAt:               time.Now().Format(time.RFC3339),
 	}
 
@@ -93,13 +93,13 @@ func DryRunMigration(planPath, sourceFile string) (*DryRunReport, error) {
 		}
 
 		opStats.TopFailures = getTopFailures(opStats.FailureReasons, 3)
-		report.OperationStats = append(report.OperationStats, opStats)
+		report.OperationResults = append(report.OperationResults, opStats)
 	}
 
-	report.SuccessRecords = calculateOverallSuccess(report.OperationStats, totalRecords)
+	report.SuccessRecords = calculateOverallSuccess(report.OperationResults, totalRecords)
 	report.FailedRecords = totalRecords - report.SuccessRecords
 
-	report.Suggestions = generateSuggestions(report.OperationStats)
+	report.Recommendations = generateSuggestions(report.OperationResults)
 
 	return report, nil
 }
@@ -123,10 +123,7 @@ func applyOperationDryRun(op *MigrationOperation, record map[string]interface{},
 			return &dryRunResult{}, nil
 		}
 		if op.DefaultValue == nil {
-			field := findFieldInRecord(record, fieldPath)
-			if field != nil && !isNullableField(field) {
-				return nil, fmt.Errorf("field %s is NOT NULL and no default_value provided", fieldPath)
-			}
+			return nil, fmt.Errorf("field %s is NOT NULL and no default_value provided", fieldPath)
 		}
 		return &dryRunResult{}, nil
 
@@ -386,7 +383,7 @@ func (dr *DryRunReport) Print() {
 	}
 
 	fmt.Printf("\n=== Operation Details ===\n")
-	for _, s := range dr.OperationStats {
+	for _, s := range dr.OperationResults {
 		riskColor := "\033[32m"
 		switch s.Operation.RiskLevel {
 		case RiskMedium:
@@ -407,9 +404,9 @@ func (dr *DryRunReport) Print() {
 		}
 	}
 
-	if len(dr.Suggestions) > 0 {
+	if len(dr.Recommendations) > 0 {
 		fmt.Printf("\n=== Recommendations ===\n")
-		for _, s := range dr.Suggestions {
+		for _, s := range dr.Recommendations {
 			fmt.Printf("\n  Step %d (failure rate: %.1f%%):\n", s.StepIndex, s.FailureRate*100)
 			fmt.Printf("    Top reason: %s\n", s.TopReason)
 			fmt.Printf("    Suggestion: %s\n", s.Action)

@@ -150,8 +150,7 @@ type MigrationPlan struct {
 	RiskStats                RiskStats             `yaml:"riskStats" json:"riskStats"`
 	EstimatedAffectedRecords int64                 `yaml:"estimatedAffectedRecords,omitempty" json:"estimatedAffectedRecords,omitempty"`
 	EstimatedSuccessRate     float64               `yaml:"estimatedSuccessRate,omitempty" json:"estimatedSuccessRate,omitempty"`
-	ExecutionState           ExecutionState        `yaml:"executionState" json:"executionState"`
-	ExecutedSteps            int                   `yaml:"executedSteps,omitempty" json:"executedSteps,omitempty"`
+	ExecutionState           string                `yaml:"executionState" json:"executionState"`
 	Operations               []*MigrationOperation `yaml:"operations" json:"operations"`
 	CreatedAt                string                `yaml:"createdAt" json:"createdAt"`
 	FieldQualityInfo         []*FieldQualityInfo   `yaml:"fieldQualityInfo,omitempty" json:"fieldQualityInfo,omitempty"`
@@ -266,8 +265,8 @@ type DryRunReport struct {
 	FailedRecords           int64                   `yaml:"failedRecords" json:"failedRecords"`
 	SkippedFieldStats       map[string]int64        `yaml:"skippedFieldStats" json:"skippedFieldStats"`
 	MissingFallbackFailures int64                   `yaml:"missingFallbackFailures" json:"missingFallbackFailures"`
-	OperationStats          []*OperationDryRunStats `yaml:"operationStats" json:"operationStats"`
-	Suggestions             []*Suggestion           `yaml:"suggestions,omitempty" json:"suggestions,omitempty"`
+	OperationResults        []*OperationDryRunStats `yaml:"operationResults" json:"operationResults"`
+	Recommendations         []*Suggestion           `yaml:"recommendations,omitempty" json:"recommendations,omitempty"`
 	CreatedAt               string                  `yaml:"createdAt" json:"createdAt"`
 }
 

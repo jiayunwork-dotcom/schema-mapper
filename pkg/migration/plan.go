@@ -33,7 +33,7 @@ func GenerateMigrationPlan(reg *registry.Registry, schemaName, fromV, toV, dataS
 		ToVersion:      toV,
 		TotalSteps:     len(script.Operations),
 		RiskStats:      riskStats,
-		ExecutionState: StatePending,
+		ExecutionState: string(StatePending),
 		Operations:     script.Operations,
 		CreatedAt:      time.Now().Format(time.RFC3339),
 	}
@@ -319,26 +319,33 @@ func estimateImpact(qualityInfo []*FieldQualityInfo, ops []*MigrationOperation) 
 }
 
 func (mp *MigrationPlan) ParseExecutionState() (int, int, error) {
-	if mp.ExecutionState == StatePending {
+	if mp.ExecutionState == string(StatePending) {
 		return 0, mp.TotalSteps, nil
 	}
-	if mp.ExecutionState == StateCompleted {
+	if mp.ExecutionState == string(StateCompleted) {
 		return mp.TotalSteps, mp.TotalSteps, nil
 	}
-	if mp.ExecutionState == StatePartial {
-		return mp.ExecutedSteps, mp.TotalSteps, nil
+	if strings.HasPrefix(mp.ExecutionState, string(StatePartial)+":") {
+		parts := strings.Split(strings.TrimPrefix(mp.ExecutionState, string(StatePartial)+":"), "/")
+		if len(parts) == 2 {
+			var executed, total int
+			_, err1 := fmt.Sscanf(parts[0], "%d", &executed)
+			_, err2 := fmt.Sscanf(parts[1], "%d", &total)
+			if err1 == nil && err2 == nil {
+				return executed, total, nil
+			}
+		}
 	}
 	return 0, mp.TotalSteps, fmt.Errorf("unknown execution state: %s", mp.ExecutionState)
 }
 
 func (mp *MigrationPlan) UpdateExecutionState(executedSteps int) {
-	mp.ExecutedSteps = executedSteps
 	if executedSteps >= mp.TotalSteps {
-		mp.ExecutionState = StateCompleted
+		mp.ExecutionState = string(StateCompleted)
 	} else if executedSteps > 0 {
-		mp.ExecutionState = StatePartial
+		mp.ExecutionState = fmt.Sprintf("%s:%d/%d", string(StatePartial), executedSteps, mp.TotalSteps)
 	} else {
-		mp.ExecutionState = StatePending
+		mp.ExecutionState = string(StatePending)
 	}
 }
 
@@ -347,8 +354,11 @@ func (mp *MigrationPlan) Print() {
 	fmt.Printf("Created at: %s\n", mp.CreatedAt)
 	fmt.Printf("Total steps: %d\n", mp.TotalSteps)
 	fmt.Printf("Execution state: %s\n", mp.ExecutionState)
-	if mp.ExecutedSteps > 0 {
-		fmt.Printf("Executed steps: %d/%d\n", mp.ExecutedSteps, mp.TotalSteps)
+	if strings.HasPrefix(mp.ExecutionState, string(StatePartial)+":") {
+		executed, total, err := mp.ParseExecutionState()
+		if err == nil {
+			fmt.Printf("Executed steps: %d/%d\n", executed, total)
+		}
 	}
 	fmt.Printf("\nRisk distribution:\n")
 	fmt.Printf("  Low:    %d\n", mp.RiskStats.Low)
