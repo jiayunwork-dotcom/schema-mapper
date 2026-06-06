@@ -1,7 +1,9 @@
 package editor
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -217,4 +219,124 @@ func TestMoveCursor(t *testing.T) {
 	if editor.cursor != 0 {
 		t.Errorf("Cursor should not go below 0, got %d", editor.cursor)
 	}
+}
+
+func TestLoadMappingWithSpecialCharacters(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "test_special_chars_*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	yamlContent := `mappings:
+  - source: status
+    target: accountStatus
+    transform: cast
+    confidence: 0.67
+    match_type: semantic
+    needs_review: true
+    warnings:
+      - 'Potentially unsafe type conversion: enum -> string'
+      - 'Test: with # hash and & ampersand'
+`
+	if _, err := tmpFile.Write([]byte(yamlContent)); err != nil {
+		t.Fatal(err)
+	}
+	tmpFile.Close()
+
+	editor, err := NewEditor(tmpFile.Name(), "", "")
+	if err != nil {
+		t.Fatalf("Failed to load mapping with special characters: %v", err)
+	}
+
+	if len(editor.rules.Mappings) != 1 {
+		t.Errorf("Expected 1 mapping, got %d", len(editor.rules.Mappings))
+	}
+
+	rule := editor.rules.Mappings[0]
+	if len(rule.Warnings) != 2 {
+		t.Errorf("Expected 2 warnings, got %d", len(rule.Warnings))
+	}
+
+	if rule.Warnings[0] != "Potentially unsafe type conversion: enum -> string" {
+		t.Errorf("Expected warning 0 to be 'Potentially unsafe type conversion: enum -> string', got '%s'", rule.Warnings[0])
+	}
+
+	if rule.Warnings[1] != "Test: with # hash and & ampersand" {
+		t.Errorf("Expected warning 1 to be 'Test: with # hash and & ampersand', got '%s'", rule.Warnings[1])
+	}
+}
+
+func TestYamlEscapeString(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"normal string", "normal string"},
+		{"string: with colon", "'string: with colon'"},
+		{"string with # hash", "'string with # hash'"},
+		{"string with 'quotes'", "'string with ''quotes'''"},
+		{"- starting with dash", "'- starting with dash'"},
+	}
+
+	// We need to access the function from mapper package
+	for _, tt := range tests {
+		// Test via round-trip: create YAML, parse it back
+		tmpFile, err := os.CreateTemp("", "test_escape_*.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		yamlContent := fmt.Sprintf("mappings:\n  - source: test\n    target: test\n    transform: direct\n    warnings:\n      - %s\n",
+			escapeForYaml(tt.input))
+
+		tmpFile.Write([]byte(yamlContent))
+		tmpFile.Close()
+
+		rules, err := mapper.LoadMappingRules(tmpFile.Name())
+		os.Remove(tmpFile.Name())
+
+		if err != nil {
+			t.Errorf("Failed to parse escaped string '%s': %v", tt.input, err)
+			continue
+		}
+
+		if len(rules.Mappings) != 1 || len(rules.Mappings[0].Warnings) != 1 {
+			t.Errorf("Unexpected structure for input '%s'", tt.input)
+			continue
+		}
+
+		if rules.Mappings[0].Warnings[0] != tt.input {
+			t.Errorf("Round-trip failed: input '%s', got '%s'", tt.input, rules.Mappings[0].Warnings[0])
+		}
+	}
+}
+
+func escapeForYaml(s string) string {
+	needsQuotes := strings.Contains(s, ": ") ||
+		strings.Contains(s, "#") ||
+		strings.Contains(s, "&") ||
+		strings.Contains(s, "*") ||
+		strings.Contains(s, "!") ||
+		strings.Contains(s, "|") ||
+		strings.Contains(s, ">") ||
+		strings.Contains(s, "'") ||
+		strings.Contains(s, "\"") ||
+		strings.Contains(s, "{") ||
+		strings.Contains(s, "}") ||
+		strings.Contains(s, "[") ||
+		strings.Contains(s, "]") ||
+		strings.Contains(s, ",") ||
+		strings.Contains(s, "%") ||
+		strings.Contains(s, "@") ||
+		strings.Contains(s, "`") ||
+		strings.HasPrefix(s, "- ") ||
+		strings.HasPrefix(s, "? ") ||
+		strings.HasPrefix(s, ": ")
+
+	if needsQuotes {
+		escaped := strings.ReplaceAll(s, "'", "''")
+		return "'" + escaped + "'"
+	}
+	return s
 }

@@ -519,7 +519,7 @@ func (r *AutoMapperResult) ToYAML() string {
 		if len(m.Warnings) > 0 {
 			sb.WriteString("    warnings:\n")
 			for _, w := range m.Warnings {
-				sb.WriteString(fmt.Sprintf("      - %s\n", w))
+				sb.WriteString(fmt.Sprintf("      - %s\n", yamlEscapeString(w)))
 			}
 		}
 		sb.WriteString("\n")
@@ -544,4 +544,33 @@ func (r *AutoMapperResult) ToYAML() string {
 	}
 
 	return sb.String()
+}
+
+func yamlEscapeString(s string) string {
+	needsQuotes := strings.Contains(s, ": ") ||
+		strings.Contains(s, "#") ||
+		strings.Contains(s, "&") ||
+		strings.Contains(s, "*") ||
+		strings.Contains(s, "!") ||
+		strings.Contains(s, "|") ||
+		strings.Contains(s, ">") ||
+		strings.Contains(s, "'") ||
+		strings.Contains(s, "\"") ||
+		strings.Contains(s, "{") ||
+		strings.Contains(s, "}") ||
+		strings.Contains(s, "[") ||
+		strings.Contains(s, "]") ||
+		strings.Contains(s, ",") ||
+		strings.Contains(s, "%") ||
+		strings.Contains(s, "@") ||
+		strings.Contains(s, "`") ||
+		strings.HasPrefix(s, "- ") ||
+		strings.HasPrefix(s, "? ") ||
+		strings.HasPrefix(s, ": ")
+
+	if needsQuotes {
+		escaped := strings.ReplaceAll(s, "'", "''")
+		return "'" + escaped + "'"
+	}
+	return s
 }
