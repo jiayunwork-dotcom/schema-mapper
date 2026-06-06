@@ -1,0 +1,20 @@
+{
+  "sourceSchema": "User",
+  "targetSchema": "UserProfile",
+  "mappingFile": "test_mapping.yaml",
+  "sourceTotalFields": 10,
+  "sourceMappedFields": 10,
+  "sourceCoverage": 100,
+  "targetTotalFields": 10,
+  "targetCoveredFields": 10,
+  "targetCoverage": 100,
+  "unmappedSourceFields": [
+    "tags.items"
+  ],
+  "uncoveredTargetFields": [
+    "userTags.items"
+  ],
+  "warnings": [
+    "Type casting: age -\u003e userAge (format: float64)"
+  ]
+}

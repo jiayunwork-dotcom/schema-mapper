@@ -1,0 +1,71 @@
+# Auto-generated mapping rules
+# Confidence threshold: 0.7 (marked as needs_review below this)
+
+source_schema: test_source_schema.json
+target_schema: test_target_schema.json
+
+mappings:
+  - source: id
+    target: userId
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: user_name
+    target: userName
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: email
+    target: emailAddress
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: age
+    target: userAge
+    transform: cast
+    format: float64
+    confidence: 0.90
+    match_type: similarity
+
+  - source: create_time
+    target: createdAt
+    transform: direct
+    confidence: 0.95
+    match_type: semantic
+
+  - source: address.street
+    target: street
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: address.city
+    target: city
+    transform: direct
+    confidence: 1.00
+    match_type: exact
+
+  - source: address.zip_code
+    target: postalCode
+    transform: direct
+    confidence: 0.85
+    match_type: semantic
+
+  - source: tags
+    target: userTags
+    transform: direct
+    confidence: 0.90
+    match_type: similarity
+
+  - source: status
+    target: accountStatus
+    transform: lookup
+    lookup_table:
+      active: active
+      inactive: inactive
+      pending: pending
+    confidence: 0.80
+    match_type: semantic

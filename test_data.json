@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "user_name": "john_doe",
+    "email": "john@example.com",
+    "age": 30,
+    "create_time": "2024-01-15T10:30:00Z",
+    "address": {
+      "street": "123 Main St",
+      "city": "New York",
+      "zip_code": "10001"
+    },
+    "tags": ["admin", "user"],
+    "status": "active"
+  },
+  {
+    "id": 2,
+    "user_name": "jane_smith",
+    "email": "jane@example.com",
+    "age": 25,
+    "create_time": "2024-02-20T14:45:00Z",
+    "address": {
+      "street": "456 Oak Ave",
+      "city": "Los Angeles",
+      "zip_code": "90001"
+    },
+    "tags": ["user"],
+    "status": "active"
+  }
+]

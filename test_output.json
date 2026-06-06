@@ -1,0 +1,31 @@
+[
+  {
+    "accountStatus": "active",
+    "city": "New York",
+    "createdAt": "2024-01-15T10:30:00Z",
+    "emailAddress": "john@example.com",
+    "postalCode": "10001",
+    "street": "123 Main St",
+    "userAge": 30,
+    "userId": 1,
+    "userName": "john_doe",
+    "userTags": [
+      "admin",
+      "user"
+    ]
+  },
+  {
+    "accountStatus": "active",
+    "city": "Los Angeles",
+    "createdAt": "2024-02-20T14:45:00Z",
+    "emailAddress": "jane@example.com",
+    "postalCode": "90001",
+    "street": "456 Oak Ave",
+    "userAge": 25,
+    "userId": 2,
+    "userName": "jane_smith",
+    "userTags": [
+      "user"
+    ]
+  }
+]
